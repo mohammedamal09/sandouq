@@ -15,7 +15,7 @@ import {
 import { createEmptyState, createSeed } from "../src/lib/seed";
 import { groupReport, monthStats, validateImport } from "../src/lib/report";
 import { parseBackup } from "../src/lib/backup";
-import { normalizeMoroccanPhone, whatsappUrl } from "../src/lib/whatsapp";
+import { normalizeMoroccanPhone, privateMessage, whatsappUrl } from "../src/lib/whatsapp";
 import { analyticsFor } from "../src/lib/analytics";
 
 function base() {
@@ -224,6 +224,12 @@ test("WhatsApp formatter accepts Moroccan mobile forms", () => {
     whatsappUrl("0612345678", "سلام عليكم")!,
     /^https:\/\/wa\.me\/212612345678\?text=/,
   );
+});
+
+test("member WhatsApp messages include the private access PIN when available", () => {
+  const state = base();
+  state.members[0].accessPin = "4921";
+  assert.match(privateMessage(state, state.members[0], "2026-01", "محمد", "friendly"), /4921/);
 });
 
 test("admin status keeps the acting admin active and imports reject broken offsets", () => {

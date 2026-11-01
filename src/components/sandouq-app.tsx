@@ -18,6 +18,8 @@ import {
   Plus,
   ReceiptText,
   Settings2,
+  LockKeyhole,
+  LogOut,
   Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -42,10 +44,23 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
-  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
-  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -88,7 +103,15 @@ import { AdminSwitchDialog } from "./admin-switch-dialog";
 import { Amount, Private, StatusBadge } from "./display";
 import { ThemeToggle } from "./theme-toggle";
 import { normalizeMoroccanPhone } from "@/lib/whatsapp";
-const AnalyticsPanel = dynamic(() => import("./analytics-panel"), { loading: () => <p className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">جاري تحميل الإحصائيات…</p> });
+import { PublicWorkspace } from "./public-workspace";
+import { GuideDrawer } from "./guide-drawer";
+const AnalyticsPanel = dynamic(() => import("./analytics-panel"), {
+  loading: () => (
+    <p className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+      جاري تحميل الإحصائيات…
+    </p>
+  ),
+});
 
 const monthLabel = (month: string) =>
   new Intl.DateTimeFormat("ar-MA-u-nu-latn", {
@@ -107,8 +130,10 @@ export function SandouqApp() {
   const [filter, setFilter] = useState<"all" | "due" | "paid">("all");
   const [privacy, setPrivacy] = useState(false);
   const [paymentMember, setPaymentMember] = useState<Member | null>(null);
-  const [editingContributionMember, setEditingContributionMember] = useState<Member | null>(null);
-  const [deletingContributionMember, setDeletingContributionMember] = useState<Member | null>(null);
+  const [editingContributionMember, setEditingContributionMember] =
+    useState<Member | null>(null);
+  const [deletingContributionMember, setDeletingContributionMember] =
+    useState<Member | null>(null);
   const [passbookMember, setPassbookMember] = useState<Member | null>(null);
   const [whatsappMember, setWhatsappMember] = useState<Member | null>(null);
   const [expenseOpen, setExpenseOpen] = useState(false);
@@ -120,6 +145,20 @@ export function SandouqApp() {
   const [reportOpen, setReportOpen] = useState(false);
   const [createdCode, setCreatedCode] = useState("");
   const [switchTarget, setSwitchTarget] = useState("");
+  const [adminMode, setAdminMode] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      localStorage.getItem("sandouq:admin-mode") === "1",
+  );
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+  const [loginEmail, setLoginEmail] = useState("admin@admin.ma");
+  const [loginPassword, setLoginPassword] = useState("admin1234");
+  const [operatorName, setOperatorName] = useState(() =>
+    typeof window === "undefined"
+      ? ""
+      : (localStorage.getItem("sandouq:operator-name") ?? ""),
+  );
   const stats = useMemo(
     () => (state ? monthStats(state, month) : null),
     [state, month],
@@ -225,17 +264,94 @@ export function SandouqApp() {
         تعذر تحميل الصندوق
       </main>
     );
+  const login = () => {
+    if (
+      loginEmail !== "admin@admin.ma" ||
+      loginPassword !== "admin1234" ||
+      !operatorName.trim()
+    ) {
+      toast.error("تأكد من البريد وكلمة السر واسم المشغل");
+      return;
+    }
+    localStorage.setItem("sandouq:admin-mode", "1");
+    localStorage.setItem("sandouq:operator-name", operatorName.trim());
+    setAdminMode(true);
+    setLoginOpen(false);
+    toast.success("مرحبا بك ففضاء المشرف");
+  };
+  if (!adminMode)
+    return (
+      <>
+        <PublicWorkspace
+          state={state}
+          onAdminLogin={() => setLoginOpen(true)}
+          onHelp={() => setGuideOpen(true)}
+        />
+        <Dialog open={loginOpen} onOpenChange={setLoginOpen}>
+          <DialogContent dir="rtl" className="max-w-md">
+            <DialogHeader className="text-start">
+              <DialogTitle>دخول المشرف</DialogTitle>
+              <DialogDescription>دخول موحد لتدبير الصندوق.</DialogDescription>
+            </DialogHeader>
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+              <div>
+                <Label htmlFor="admin-email">البريد الإلكتروني</Label>
+                <Input
+                  id="admin-email"
+                  dir="ltr"
+                  className="mt-1"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="admin-password">كلمة السر</Label>
+                <Input
+                  id="admin-password"
+                  dir="ltr"
+                  className="mt-1"
+                  type="password"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                />
+              </div>
+              <div>
+                <Label htmlFor="operator-name">
+                  الاسم اللي غايتسجل فالعمليات والميساجات
+                </Label>
+                <Input
+                  id="operator-name"
+                  className="mt-1"
+                  placeholder="مثال: محمد"
+                  value={operatorName}
+                  onChange={(e) => setOperatorName(e.target.value)}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={login}>
+                <LockKeyhole className="size-4" /> دخول
+              </Button>
+              <Button variant="outline" onClick={() => setLoginOpen(false)}>
+                إلغاء
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        <GuideDrawer open={guideOpen} onClose={() => setGuideOpen(false)} />
+      </>
+    );
   return (
     <div className="app-shell min-h-screen pb-24 md:pb-10">
       <Toaster position="top-center" dir="rtl" />
       <header className="sticky top-0 z-30 border-b border-border bg-background/90 px-4 py-3 backdrop-blur-xl md:px-7">
-        <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-emerald-600 text-white">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-emerald-600 text-white">
               <Wallet className="size-5" />
             </div>
             <div>
-              <h1 className="text-lg leading-5 font-bold tracking-tight">
+              <h1 className="truncate text-lg leading-5 font-bold tracking-tight">
                 صندوق المجموعة
               </h1>
               <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
@@ -243,8 +359,33 @@ export function SandouqApp() {
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1">
             <ThemeToggle />
+            <Button
+              size="icon"
+              variant="ghost"
+              aria-label="دليل الاستخدام"
+              title="دليل الاستخدام"
+              onClick={() => setGuideOpen(true)}
+            >
+              <BookOpenText className="size-4" />
+              <span className="sr-only">دليل الاستخدام</span>
+            </Button>
+            {repo.cloudEnabled && (
+              <span
+                className={`hidden items-center gap-1 text-[11px] sm:inline-flex ${repo.realtimeStatus === "connected" ? "text-emerald-700 dark:text-emerald-300" : repo.realtimeStatus === "error" ? "text-rose-700 dark:text-rose-300" : "text-muted-foreground"}`}
+                title="حالة التزامن المباشر"
+              >
+                <i
+                  className={`size-2 rounded-full ${repo.realtimeStatus === "connected" ? "bg-emerald-500" : repo.realtimeStatus === "error" ? "bg-rose-500" : "bg-zinc-400"}`}
+                />
+                {repo.realtimeStatus === "connected"
+                  ? "متزامن مباشرة"
+                  : repo.realtimeStatus === "error"
+                    ? "تعذر التزامن"
+                    : "كيتم الربط"}
+              </span>
+            )}
             <TooltipProvider>
               <Tooltip>
                 <TooltipTrigger asChild>
@@ -266,9 +407,36 @@ export function SandouqApp() {
                 </TooltipContent>
               </Tooltip>
             </TooltipProvider>
+            <Badge className="hidden bg-emerald-600 sm:inline-flex">
+              🟢 وضع المشرف
+            </Badge>
+            <Button
+              size="icon"
+              variant="outline"
+              className="sm:hidden"
+              aria-label="خروج"
+              title="خروج"
+              onClick={() => {
+                localStorage.removeItem("sandouq:admin-mode");
+                setAdminMode(false);
+              }}
+            >
+              <LogOut className="size-4" />
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="hidden sm:inline-flex"
+              onClick={() => {
+                localStorage.removeItem("sandouq:admin-mode");
+                setAdminMode(false);
+              }}
+            >
+              <LogOut className="size-4" /> خروج
+            </Button>
             <Select value={adminId} onValueChange={switchAdmin}>
               <SelectTrigger
-                className="w-[105px] bg-card sm:w-[145px]"
+                className="w-[86px] bg-card text-[11px] sm:w-[145px] sm:text-sm"
                 aria-label="المشرف الحالي"
               >
                 <SelectValue />
@@ -287,11 +455,61 @@ export function SandouqApp() {
         </div>
       </header>
       <main className="px-4 pt-5 md:px-7">
+        {state.members.filter((member) => member.active && !member.archivedAt)
+          .length === 0 && (
+          <Card className="mb-5 border-emerald-500/20 bg-emerald-500/5 shadow-none">
+            <CardContent className="p-4">
+              <p className="font-semibold">بدا إعداد الصندوق</p>
+              <ol className="mt-2 grid gap-2 text-sm sm:grid-cols-3">
+                <li className="rounded-md border border-border bg-background/50 p-2">
+                  <b className="numeric">1.</b> حدد الحد الأدنى الشهري
+                </li>
+                <li className="rounded-md border border-border bg-background/50 p-2">
+                  <b className="numeric">2.</b> أضف لائحة الدراري
+                </li>
+                <li className="rounded-md border border-border bg-background/50 p-2">
+                  <b className="numeric">3.</b> بدا قيد المساهمات
+                </li>
+              </ol>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button size="sm" onClick={() => setTab("settings")}>
+                  <Plus className="size-4" /> أضف أول عضو للبدء
+                </Button>
+                {!repo.cloudEnabled && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    data-testid="reset-zero-state"
+                    onClick={() =>
+                      void repo
+                        .resetLocal()
+                        .then(() =>
+                          toast.success(
+                            "الصندوق دابا فارغ وجاهز للبيانات الحقيقية",
+                          ),
+                        )
+                        .catch((error) => toast.error(error.message))
+                    }
+                  >
+                    تصفير الصندوق للبدء بالبيانات الحقيقية
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        )}
         {repo.cloudEnabled && (repo.pending > 0 || repo.error) && (
           <div
             className={`mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border p-3 text-xs ${repo.error ? "border-amber-200 dark:border-amber-500/20 bg-amber-50 dark:bg-amber-500/10 text-amber-900 dark:text-amber-200" : "border-zinc-200 dark:border-white/10 bg-white dark:bg-zinc-900/70 text-zinc-600 dark:text-zinc-300"}`}
           >
-            <span>{repo.error || <><span className="numeric">{repo.pending}</span> عملية قيد المزامنة</>}</span>
+            <span>
+              {repo.error || (
+                <>
+                  <span className="numeric">{repo.pending}</span> عملية قيد
+                  المزامنة
+                </>
+              )}
+            </span>
             <div className="flex gap-2">
               <Button
                 size="sm"
@@ -301,7 +519,13 @@ export function SandouqApp() {
                 إعادة المحاولة
               </Button>
               {repo.pending > 0 && (
-                <Button size="sm" variant="outline" onClick={() => setPendingReviewOpen(true)}>مراجعة العمليات</Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setPendingReviewOpen(true)}
+                >
+                  مراجعة العمليات
+                </Button>
               )}
               {repo.pending > 0 && (
                 <Button
@@ -353,8 +577,11 @@ export function SandouqApp() {
             </Button>
           </div>
         )}
-        <div className="grid gap-5 md:grid-cols-[minmax(300px,330px)_minmax(0,1fr)] lg:gap-6">
-          <div className="space-y-4">
+        <div className="grid gap-5 lg:grid-cols-12 lg:gap-6">
+          <aside
+            data-testid="dashboard-sidebar"
+            className="space-y-4 lg:col-span-4 lg:sticky lg:top-20 lg:self-start"
+          >
             <Card className="relative isolate overflow-hidden border border-emerald-500/15 bg-card shadow-none backdrop-blur-xl">
               <span aria-hidden="true" className="ambient-glow" />
               <CardContent className="relative z-10 p-5 sm:p-6">
@@ -366,13 +593,15 @@ export function SandouqApp() {
                 </div>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-900/50 px-2.5 py-1.5 text-xs">
-                    <Banknote className="size-3.5 text-zinc-600 dark:text-zinc-300" /> الكاش{" "}
+                    <Banknote className="size-3.5 text-zinc-600 dark:text-zinc-300" />{" "}
+                    الكاش{" "}
                     <span className="numeric font-medium">
                       {money(vault.cash)}
                     </span>
                   </span>
                   <span className="inline-flex items-center gap-1 rounded-md border border-zinc-200 dark:border-white/10 bg-zinc-50 dark:bg-zinc-900/50 px-2.5 py-1.5 text-xs">
-                    <Landmark className="size-3.5 text-zinc-600 dark:text-zinc-300" /> البنكة{" "}
+                    <Landmark className="size-3.5 text-zinc-600 dark:text-zinc-300" />{" "}
+                    البنكة{" "}
                     <span className="numeric font-medium">
                       {money(vault.bank)}
                     </span>
@@ -405,15 +634,19 @@ export function SandouqApp() {
                   </Button>
                 </div>
               </div>
-              <div className="mt-4 grid grid-cols-2 gap-3">
+              <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div className="rounded-lg bg-emerald-50 dark:bg-emerald-500/10 p-3">
-                  <p className="text-[11px] text-emerald-800 dark:text-emerald-200">مداخيل الشهر</p>
+                  <p className="text-[11px] text-emerald-800 dark:text-emerald-200">
+                    مداخيل الشهر
+                  </p>
                   <p className="numeric mt-1 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
                     +{money(stats.cashBase + stats.cashBonus)}
                   </p>
                 </div>
                 <div className="rounded-lg bg-rose-50 dark:bg-rose-500/10 p-3">
-                  <p className="text-[11px] text-rose-800 dark:text-rose-200">مصاريف الصندوق</p>
+                  <p className="text-[11px] text-rose-800 dark:text-rose-200">
+                    مصاريف الصندوق
+                  </p>
                   <p className="numeric mt-1 text-sm font-semibold text-rose-700 dark:text-rose-300">
                     -{money(stats.directOut)}
                   </p>
@@ -432,7 +665,7 @@ export function SandouqApp() {
                 }
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Button
                 variant="outline"
                 className="justify-center"
@@ -448,8 +681,11 @@ export function SandouqApp() {
                 <Plus className="size-4" /> قيد مصروف
               </Button>
             </div>
-          </div>
-          <section className="min-w-0">
+          </aside>
+          <section
+            data-testid="dashboard-workspace"
+            className="min-w-0 lg:col-span-8"
+          >
             <Tabs
               value={tab}
               onValueChange={(value) => setTab(value as Tab)}
@@ -457,7 +693,13 @@ export function SandouqApp() {
             >
               <TabsList variant="line">
                 {(
-                  ["contributions", "expenses", "ledger", "analytics", "settings"] as Tab[]
+                  [
+                    "contributions",
+                    "expenses",
+                    "ledger",
+                    "analytics",
+                    "settings",
+                  ] as Tab[]
                 ).map((item) => (
                   <TabsTrigger key={item} value={item}>
                     {
@@ -473,103 +715,124 @@ export function SandouqApp() {
                 ))}
               </TabsList>
             </Tabs>
-            <motion.div key={tab} initial={reduceMotion ? false : { opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.26, ease: "easeOut" }}>
-            {tab === "contributions" && (
-              <>
-                <div className="mb-3 flex items-center justify-between gap-2">
-                  <div>
-                    <h2 className="text-base font-bold">مساهمات الأعضاء</h2>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      <span className="numeric">{stats.contributors}</span> من <span className="numeric">{stats.eligible}</span> ساهمو هاد الشهر
-                    </p>
+            <motion.div
+              key={tab}
+              initial={reduceMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.26, ease: "easeOut" }}
+            >
+              {tab === "contributions" && (
+                <>
+                  <div className="mb-3 flex items-center justify-between gap-2">
+                    <div>
+                      <h2 className="text-base font-bold">مساهمات الأعضاء</h2>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        <span className="numeric">{stats.contributors}</span> من{" "}
+                        <span className="numeric">{stats.eligible}</span> ساهمو
+                        هاد الشهر
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="numeric rounded-md">
+                      {members.length} عضو
+                    </Badge>
                   </div>
-                  <Badge variant="outline" className="numeric rounded-md">
-                    {members.length} عضو
-                  </Badge>
-                </div>
-                <div className="mb-3 flex gap-2">
-                  {[
-                    ["all", "الكل"],
-                    ["due", "مازال ماخلصوش"],
-                    ["paid", "خالصين"],
-                  ].map(([key, label]) => (
-                    <Button
-                      key={key}
-                      size="sm"
-                      variant={filter === key ? "default" : "outline"}
-                      className="min-h-9"
-                      onClick={() => setFilter(key as typeof filter)}
-                    >
-                      {label}
-                    </Button>
-                  ))}
-                </div>
-                <div className="surface divide-y divide-zinc-100 dark:divide-white/10 overflow-hidden">
-                  {members.map((member, index) => {
-                    const status = statusFor(state, member.id, month);
-                    const paid = paidFor(state, member.id, month);
-                    const due = minimumFor(state, month);
-                    const arrears = arrearsFor(state, member, month);
-                    return (
-                      <motion.div
-                        key={member.id}
-                        initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ duration: 0.22, delay: Math.min(index, 10) * 0.025 }}
-                        className="interactive-row flex items-center gap-2 px-3 py-3 sm:px-4"
+                  <div className="mb-3 flex gap-2">
+                    {[
+                      ["all", "الكل"],
+                      ["due", "مازال ماخلصوش"],
+                      ["paid", "خالصين"],
+                    ].map(([key, label]) => (
+                      <Button
+                        key={key}
+                        size="sm"
+                        variant={filter === key ? "default" : "outline"}
+                        className="min-h-9"
+                        onClick={() => setFilter(key as typeof filter)}
                       >
-                        <Avatar size="sm" className="size-8 bg-zinc-100 dark:bg-zinc-800">
-                          <AvatarFallback>
-                            <Private hidden={privacy}>
-                              {member.name.slice(0, 1)}
-                            </Private>
-                          </AvatarFallback>
-                        </Avatar>
-                        <button
-                          className="min-w-0 flex-1 text-start"
-                          onClick={() => setPassbookMember(member)}
+                        {label}
+                      </Button>
+                    ))}
+                  </div>
+                  <div className="surface divide-y divide-zinc-100 dark:divide-white/10 overflow-hidden">
+                    {members.map((member, index) => {
+                      const status = statusFor(state, member.id, month);
+                      const paid = paidFor(state, member.id, month);
+                      const due = minimumFor(state, month);
+                      const arrears = arrearsFor(state, member, month);
+                      return (
+                        <motion.div
+                          key={member.id}
+                          initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{
+                            duration: 0.22,
+                            delay: Math.min(index, 10) * 0.025,
+                          }}
+                          className="interactive-row flex items-center gap-2 px-3 py-3 sm:px-4"
                         >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Private
-                              hidden={privacy}
-                              className="truncate text-sm font-semibold"
-                            >
-                              {member.name}
-                            </Private>
-                            <Private hidden={privacy}>
-                              <StatusBadge status={status} />
-                            </Private>
-                          </div>
-                          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
-                            <Amount value={paid} hidden={privacy} />
-                            {status === "partial" && (
-                              <>
-                                {" "}
-                                / <span className="numeric">{money(due)}</span>
-                                <span className="text-amber-700 dark:text-amber-300">
-                                  باقي{" "}
-                                  <Amount value={due - paid} hidden={privacy} />
-                                </span>
-                              </>
-                            )}
-                            {arrears.count > 0 && (
+                          <Avatar
+                            size="sm"
+                            className="size-8 bg-zinc-100 dark:bg-zinc-800"
+                          >
+                            <AvatarFallback>
+                              <Private hidden={privacy}>
+                                {member.name.slice(0, 1)}
+                              </Private>
+                            </AvatarFallback>
+                          </Avatar>
+                          <button
+                            className="min-w-0 flex-1 text-start"
+                            onClick={() => setPassbookMember(member)}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
                               <Private
                                 hidden={privacy}
-                                className="rounded border border-rose-200 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 px-1.5 text-[11px] text-rose-700 dark:text-rose-300"
+                                className="truncate text-sm font-semibold"
                               >
-                                متأخر بـ <span className="numeric">{arrears.count}</span> شهر
+                                {member.name}
                               </Private>
-                            )}
-                          </div>
-                        </button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={`واتساب ${member.name}`}
-                          onClick={() => setWhatsappMember(member)}
-                        >
-                          <MessageCircle className="size-4 text-zinc-600 dark:text-zinc-300" />
-                        </Button>
+                              <Private hidden={privacy}>
+                                <StatusBadge status={status} />
+                              </Private>
+                            </div>
+                            <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400">
+                              <Amount value={paid} hidden={privacy} />
+                              {status === "partial" && (
+                                <>
+                                  {" "}
+                                  /{" "}
+                                  <span className="numeric">{money(due)}</span>
+                                  <span className="text-amber-700 dark:text-amber-300">
+                                    باقي{" "}
+                                    <Amount
+                                      value={due - paid}
+                                      hidden={privacy}
+                                    />
+                                  </span>
+                                </>
+                              )}
+                              {arrears.count > 0 && (
+                                <Private
+                                  hidden={privacy}
+                                  className="rounded border border-rose-200 dark:border-rose-500/20 bg-rose-50 dark:bg-rose-500/10 px-1.5 text-[11px] text-rose-700 dark:text-rose-300"
+                                >
+                                  متأخر بـ{" "}
+                                  <span className="numeric">
+                                    {arrears.count}
+                                  </span>{" "}
+                                  شهر
+                                </Private>
+                              )}
+                            </div>
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={`واتساب ${member.name}`}
+                            onClick={() => setWhatsappMember(member)}
+                          >
+                            <MessageCircle className="size-4 text-zinc-600 dark:text-zinc-300" />
+                          </Button>
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button
@@ -581,125 +844,175 @@ export function SandouqApp() {
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                              <DropdownMenuItem onSelect={() => setEditingMember(member)}>تعديل العضو</DropdownMenuItem>
-                              <DropdownMenuItem className="text-rose-700 dark:text-rose-300" onSelect={() => setDeletingMember(member)}>حذف العضو</DropdownMenuItem>
-                              {status !== "unpaid" && <DropdownMenuItem onSelect={() => setEditingContributionMember(member)}>
-                                تعديل المساهمة
-                              </DropdownMenuItem>}
-                              {status !== "unpaid" && <DropdownMenuItem
-                                className="text-rose-700 dark:text-rose-300 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-700 dark:data-[highlighted]:bg-rose-500/10 dark:data-[highlighted]:text-rose-200"
-                                onSelect={() => setDeletingContributionMember(member)}
+                              <DropdownMenuItem
+                                onSelect={() => setEditingMember(member)}
                               >
-                                إلغاء المساهمة
-                              </DropdownMenuItem>}
+                                تعديل العضو
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                className="text-rose-700 dark:text-rose-300"
+                                onSelect={() => setDeletingMember(member)}
+                              >
+                                حذف العضو
+                              </DropdownMenuItem>
+                              {status !== "unpaid" && (
+                                <DropdownMenuItem
+                                  onSelect={() =>
+                                    setEditingContributionMember(member)
+                                  }
+                                >
+                                  تعديل المساهمة
+                                </DropdownMenuItem>
+                              )}
+                              {status !== "unpaid" && (
+                                <DropdownMenuItem
+                                  className="text-rose-700 dark:text-rose-300 data-[highlighted]:bg-rose-50 data-[highlighted]:text-rose-700 dark:data-[highlighted]:bg-rose-500/10 dark:data-[highlighted]:text-rose-200"
+                                  onSelect={() =>
+                                    setDeletingContributionMember(member)
+                                  }
+                                >
+                                  إلغاء المساهمة
+                                </DropdownMenuItem>
+                              )}
                             </DropdownMenuContent>
                           </DropdownMenu>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setPaymentMember(member)}
-                          disabled={status === "waived"}
-                        >
-                          خلّص <Plus className="size-3.5" />
-                        </Button>
-                      </motion.div>
-                    );
-                  })}
-                  {members.length === 0 && (
-                    <p className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      ما كاين حتى عضو فهاد التصفية
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-            {tab === "expenses" && (
-              <>
-                <div className="mb-3 flex items-center justify-between">
-                  <div>
-                    <h2 className="text-base font-bold">المصاريف</h2>
-                    <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                      كل مصاريف {monthLabel(month)}
-                    </p>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setPaymentMember(member)}
+                            disabled={status === "waived"}
+                          >
+                            خلّص <Plus className="size-3.5" />
+                          </Button>
+                        </motion.div>
+                      );
+                    })}
+                    {members.length === 0 && (
+                      <p className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                        ما كاين حتى عضو فهاد التصفية
+                      </p>
+                    )}
                   </div>
-                  <Button size="sm" onClick={() => setExpenseOpen(true)}>
-                    <Plus className="size-4" /> مصروف
-                  </Button>
-                </div>
-                <div className="surface divide-y divide-zinc-100 dark:divide-white/10">
-                  {[...stats.expenses].reverse().map((e, index) => (
-                    <motion.div
-                      key={e.id}
-                      initial={reduceMotion ? false : { opacity: 0, y: 6 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: 0.22, delay: Math.min(index, 10) * 0.025 }}
-                      className="interactive-row flex items-center justify-between gap-3 px-4 py-3"
-                    >
-                      <div>
-                        <p className="text-sm font-semibold">
-                          <Private hidden={privacy}>{e.title}</Private>
-                        </p>
-                        <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
-                          <span className="numeric">
-                            {e.spentAt.slice(0, 10)}
-                          </span>{" "}
-                          ·{" "}
-                          {e.source === "offset"
-                            ? "مقاصة عضو"
-                            : e.channel === "cash"
-                              ? "كاش"
-                              : "بنكة"}{" "}
-                          ·{" "}
-                          {
-                            state.admins.find(
-                              (a) => a.id === e.recordedByAdminId,
-                            )?.name
-                          }
-                        </p>
-                        {e.receiptId && (
-                          <ReceiptButton
-                            receiptId={e.receiptId}
-                            privacy={privacy}
-                          />
-                        )}
-                      </div>
-                      <Amount
-                        value={-e.amount}
-                        hidden={privacy}
-                        className="text-sm font-semibold text-rose-700 dark:text-rose-300"
-                      />
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild><Button size="icon" variant="ghost" aria-label={`خيارات المصروف ${e.title}`}><MoreHorizontal className="size-4" /></Button></DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onSelect={() => { setEditingExpense(e); setExpenseOpen(true); }}>تعديل</DropdownMenuItem>
-                          <DropdownMenuItem className="text-rose-700 dark:text-rose-300" onSelect={() => setDeletingExpense(e)}>حذف</DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </motion.div>
-                  ))}
-                  {!stats.expenses.length && (
-                    <p className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
-                      ما كاين حتى مصروف هاد الشهر
-                    </p>
-                  )}
-                </div>
-              </>
-            )}
-            {tab === "ledger" && (
-              <LedgerPanel state={state} privacy={privacy} adminId={adminId} dispatch={dispatch} />
-            )}
-            {tab === "analytics" && <AnalyticsPanel state={state} privacy={privacy} />}
-            {tab === "settings" && (
-              <SettingsPanel
-                state={state}
-                adminId={adminId}
-                privacy={privacy}
-                dispatch={dispatch}
-                importLocal={repo.importLocal}
-                cloudEnabled={repo.cloudEnabled}
-                createGroup={repo.createGroup}
-              />
-            )}
+                </>
+              )}
+              {tab === "expenses" && (
+                <>
+                  <div className="mb-3 flex items-center justify-between">
+                    <div>
+                      <h2 className="text-base font-bold">المصاريف</h2>
+                      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                        كل مصاريف {monthLabel(month)}
+                      </p>
+                    </div>
+                    <Button size="sm" onClick={() => setExpenseOpen(true)}>
+                      <Plus className="size-4" /> مصروف
+                    </Button>
+                  </div>
+                  <div className="surface divide-y divide-zinc-100 dark:divide-white/10">
+                    {[...stats.expenses].reverse().map((e, index) => (
+                      <motion.div
+                        key={e.id}
+                        initial={reduceMotion ? false : { opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{
+                          duration: 0.22,
+                          delay: Math.min(index, 10) * 0.025,
+                        }}
+                        className="interactive-row flex items-center justify-between gap-3 px-4 py-3"
+                      >
+                        <div>
+                          <p className="text-sm font-semibold">
+                            <Private hidden={privacy}>{e.title}</Private>
+                          </p>
+                          <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">
+                            <span className="numeric">
+                              {e.spentAt.slice(0, 10)}
+                            </span>{" "}
+                            ·{" "}
+                            {e.source === "offset"
+                              ? "مقاصة عضو"
+                              : e.channel === "cash"
+                                ? "كاش"
+                                : "بنكة"}{" "}
+                            ·{" "}
+                            {
+                              state.admins.find(
+                                (a) => a.id === e.recordedByAdminId,
+                              )?.name
+                            }
+                          </p>
+                          {e.receiptId && (
+                            <ReceiptButton
+                              receiptId={e.receiptId}
+                              privacy={privacy}
+                            />
+                          )}
+                        </div>
+                        <Amount
+                          value={-e.amount}
+                          hidden={privacy}
+                          className="text-sm font-semibold text-rose-700 dark:text-rose-300"
+                        />
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              aria-label={`خيارات المصروف ${e.title}`}
+                            >
+                              <MoreHorizontal className="size-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                setEditingExpense(e);
+                                setExpenseOpen(true);
+                              }}
+                            >
+                              تعديل
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              className="text-rose-700 dark:text-rose-300"
+                              onSelect={() => setDeletingExpense(e)}
+                            >
+                              حذف
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      </motion.div>
+                    ))}
+                    {!stats.expenses.length && (
+                      <p className="p-8 text-center text-sm text-zinc-500 dark:text-zinc-400">
+                        ما كاين حتى مصروف هاد الشهر
+                      </p>
+                    )}
+                  </div>
+                </>
+              )}
+              {tab === "ledger" && (
+                <LedgerPanel
+                  state={state}
+                  privacy={privacy}
+                  adminId={adminId}
+                  dispatch={dispatch}
+                />
+              )}
+              {tab === "analytics" && (
+                <AnalyticsPanel state={state} privacy={privacy} />
+              )}
+              {tab === "settings" && (
+                <SettingsPanel
+                  state={state}
+                  adminId={adminId}
+                  privacy={privacy}
+                  dispatch={dispatch}
+                  importLocal={repo.importLocal}
+                  resetLocal={repo.resetLocal}
+                  cloudEnabled={repo.cloudEnabled}
+                  createGroup={repo.createGroup}
+                />
+              )}
             </motion.div>
           </section>
         </div>
@@ -717,7 +1030,15 @@ export function SandouqApp() {
           ).map(([key, Icon, label]) => (
             <button
               key={key}
-              aria-label={{ contributions: "المساهمات", expenses: "المصاريف", ledger: "السجل", analytics: "الإحصائيات", settings: "الإعدادات" }[key]}
+              aria-label={
+                {
+                  contributions: "المساهمات",
+                  expenses: "المصاريف",
+                  ledger: "السجل",
+                  analytics: "الإحصائيات",
+                  settings: "الإعدادات",
+                }[key]
+              }
               className={`flex min-h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg py-1 text-[10px] leading-tight ${tab === key ? "bg-emerald-50 dark:bg-emerald-500/10 font-semibold text-emerald-700 dark:text-emerald-300" : "text-zinc-500 dark:text-zinc-400"}`}
               onClick={() => setTab(key)}
             >
@@ -754,39 +1075,292 @@ export function SandouqApp() {
         editingExpense={editingExpense}
         adminId={adminId}
         privacy={privacy}
-        onClose={() => { setExpenseOpen(false); setEditingExpense(null); }}
+        onClose={() => {
+          setExpenseOpen(false);
+          setEditingExpense(null);
+        }}
         dispatch={dispatch}
       />
-      <Dialog open={Boolean(editingMember)} onOpenChange={(open) => !open && setEditingMember(null)}>
+      <Dialog
+        open={Boolean(editingMember)}
+        onOpenChange={(open) => !open && setEditingMember(null)}
+      >
         <DialogContent dir="rtl" className="max-w-md">
-          <DialogHeader className="text-start"><DialogTitle>تعديل العضو</DialogTitle><DialogDescription>الاسم والرقم وشهر الانضمام. السجل المالي يبقى محفوظ.</DialogDescription></DialogHeader>
+          <DialogHeader className="text-start">
+            <DialogTitle>تعديل العضو</DialogTitle>
+            <DialogDescription>
+              الاسم والرقم وشهر الانضمام. السجل المالي يبقى محفوظ.
+            </DialogDescription>
+          </DialogHeader>
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain">
-            <div><Label htmlFor="member-edit-name">الاسم</Label><Input id="member-edit-name" className={`mt-2 ${privacy ? "private-blur" : ""}`} value={editingMember?.name ?? ""} onChange={(event) => setEditingMember((member) => member ? { ...member, name: event.target.value } : null)} /></div>
-            <div><Label htmlFor="member-edit-phone">الهاتف</Label><Input id="member-edit-phone" className={`numeric mt-2 ${privacy ? "private-blur" : ""}`} dir="ltr" value={editingMember?.phone ?? ""} onChange={(event) => setEditingMember((member) => member ? { ...member, phone: event.target.value } : null)} /></div>
-            <div><Label htmlFor="member-edit-month">شهر الانضمام</Label><Input id="member-edit-month" className="numeric mt-2" type="month" dir="ltr" value={editingMember?.joinedMonth ?? ""} onChange={(event) => setEditingMember((member) => member ? { ...member, joinedMonth: event.target.value } : null)} /></div>
+            <div>
+              <Label htmlFor="member-edit-name">الاسم</Label>
+              <Input
+                id="member-edit-name"
+                className={`mt-2 ${privacy ? "private-blur" : ""}`}
+                value={editingMember?.name ?? ""}
+                onChange={(event) =>
+                  setEditingMember((member) =>
+                    member ? { ...member, name: event.target.value } : null,
+                  )
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="member-edit-phone">الهاتف</Label>
+              <Input
+                id="member-edit-phone"
+                className={`numeric mt-2 ${privacy ? "private-blur" : ""}`}
+                dir="ltr"
+                value={editingMember?.phone ?? ""}
+                onChange={(event) =>
+                  setEditingMember((member) =>
+                    member ? { ...member, phone: event.target.value } : null,
+                  )
+                }
+              />
+            </div>
+            <div>
+              <Label htmlFor="member-edit-month">شهر الانضمام</Label>
+              <Input
+                id="member-edit-month"
+                className="numeric mt-2"
+                type="month"
+                dir="ltr"
+                value={editingMember?.joinedMonth ?? ""}
+                onChange={(event) =>
+                  setEditingMember((member) =>
+                    member
+                      ? { ...member, joinedMonth: event.target.value }
+                      : null,
+                  )
+                }
+              />
+            </div>
           </div>
-          <DialogFooter><Button onClick={() => { if (!editingMember) return; const phone = normalizeMoroccanPhone(editingMember.phone); if (!phone) return toast.error("رقم مغربي غير صالح"); if (dispatch({ id: newId(), type: "member", adminId, member: { ...editingMember, phone, name: editingMember.name.trim() }, expectedRevision: editingMember.revision, at: new Date().toISOString() })) setEditingMember(null); }}>حفظ التعديل</Button><Button variant="outline" onClick={() => setEditingMember(null)}>إلغاء</Button></DialogFooter>
+          <DialogFooter>
+            <Button
+              onClick={() => {
+                if (!editingMember) return;
+                const phone = normalizeMoroccanPhone(editingMember.phone);
+                if (!phone) return toast.error("رقم مغربي غير صالح");
+                if (
+                  dispatch({
+                    id: newId(),
+                    type: "member",
+                    adminId,
+                    member: {
+                      ...editingMember,
+                      phone,
+                      name: editingMember.name.trim(),
+                    },
+                    expectedRevision: editingMember.revision,
+                    at: new Date().toISOString(),
+                  })
+                )
+                  setEditingMember(null);
+              }}
+            >
+              حفظ التعديل
+            </Button>
+            <Button variant="outline" onClick={() => setEditingMember(null)}>
+              إلغاء
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
-      <AlertDialog open={Boolean(deletingMember)} onOpenChange={(open) => !open && setDeletingMember(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>حذف العضو</AlertDialogTitle><AlertDialogDescription>هل أنت متأكد؟ العضو اللي عنده سجل مالي غادي يتأرشف وتبقى مساهماته محفوظة. العضو بلا سجل مالي غادي يتحيد نهائياً.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel asChild><Button variant="outline">إلغاء</Button></AlertDialogCancel><AlertDialogAction asChild><Button variant="destructive" onClick={(event) => { if (!deletingMember || !dispatch({ id: newId(), type: "delete_member", adminId, memberId: deletingMember.id, at: new Date().toISOString() })) event.preventDefault(); else setDeletingMember(null); }}>حذف العضو</Button></AlertDialogAction></AlertDialogFooter></AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={Boolean(deletingContributionMember)} onOpenChange={(open) => !open && setDeletingContributionMember(null)}>
-        <AlertDialogContent><AlertDialogHeader><AlertDialogTitle>إلغاء المساهمة</AlertDialogTitle><AlertDialogDescription>غادي يتصححو أداءات هذا العضو لهاد الشهر، ويبقى السجل الأصلي ظاهر فالتاريخ. واش متأكد؟</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel asChild><Button variant="outline">إلغاء</Button></AlertDialogCancel><AlertDialogAction asChild><Button variant="destructive" onClick={(event) => { if (!deletingContributionMember || !dispatch({ id: newId(), type: "monthly_contribution", adminId, memberId: deletingContributionMember.id, month, amount: 0, channel: "cash", mode: "bonus", expectedRevision: state.revision, at: new Date().toISOString() })) event.preventDefault(); else setDeletingContributionMember(null); }}>إلغاء المساهمة</Button></AlertDialogAction></AlertDialogFooter></AlertDialogContent>
-      </AlertDialog>
-      <AlertDialog open={Boolean(deletingExpense)} onOpenChange={(open) => !open && setDeletingExpense(null)}>
+      <AlertDialog
+        open={Boolean(deletingMember)}
+        onOpenChange={(open) => !open && setDeletingMember(null)}
+      >
         <AlertDialogContent>
-          <AlertDialogHeader><AlertDialogTitle>حذف المصروف</AlertDialogTitle><AlertDialogDescription>هل أنت متأكد من حذف هذا المصروف؟ {deletingExpense?.source === "direct" ? `غادي يرجع ${deletingExpense ? money(deletingExpense.amount) : ""} لرصيد ${deletingExpense?.channel === "cash" ? "الكاش" : "البنكة"}.` : "غادي يتحيد المصروف والمساهمة المرتبطة به بلا تغيير رصيد الصندوق."}</AlertDialogDescription></AlertDialogHeader>
-          <AlertDialogFooter><AlertDialogCancel asChild><Button variant="outline">إلغاء</Button></AlertDialogCancel><AlertDialogAction asChild><Button variant="destructive" onClick={(event) => { if (!deletingExpense || !dispatch({ id: newId(), type: "correct_expense", adminId, targetId: deletingExpense.id, expectedRevision: state.revision, at: new Date().toISOString() })) event.preventDefault(); else setDeletingExpense(null); }}>حذف المصروف</Button></AlertDialogAction></AlertDialogFooter>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف العضو</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد؟ العضو اللي عنده سجل مالي غادي يتأرشف وتبقى مساهماته
+              محفوظة. العضو بلا سجل مالي غادي يتحيد نهائياً.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button variant="outline">إلغاء</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                variant="destructive"
+                onClick={(event) => {
+                  if (
+                    !deletingMember ||
+                    !dispatch({
+                      id: newId(),
+                      type: "delete_member",
+                      adminId,
+                      memberId: deletingMember.id,
+                      at: new Date().toISOString(),
+                    })
+                  )
+                    event.preventDefault();
+                  else setDeletingMember(null);
+                }}
+              >
+                حذف العضو
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={Boolean(deletingContributionMember)}
+        onOpenChange={(open) => !open && setDeletingContributionMember(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>إلغاء المساهمة</AlertDialogTitle>
+            <AlertDialogDescription>
+              غادي يتصححو أداءات هذا العضو لهاد الشهر، ويبقى السجل الأصلي ظاهر
+              فالتاريخ. واش متأكد؟
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button variant="outline">إلغاء</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                variant="destructive"
+                onClick={(event) => {
+                  if (
+                    !deletingContributionMember ||
+                    !dispatch({
+                      id: newId(),
+                      type: "monthly_contribution",
+                      adminId,
+                      memberId: deletingContributionMember.id,
+                      month,
+                      amount: 0,
+                      channel: "cash",
+                      mode: "bonus",
+                      expectedRevision: state.revision,
+                      at: new Date().toISOString(),
+                    })
+                  )
+                    event.preventDefault();
+                  else setDeletingContributionMember(null);
+                }}
+              >
+                إلغاء المساهمة
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog
+        open={Boolean(deletingExpense)}
+        onOpenChange={(open) => !open && setDeletingExpense(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>حذف المصروف</AlertDialogTitle>
+            <AlertDialogDescription>
+              هل أنت متأكد من حذف هذا المصروف؟{" "}
+              {deletingExpense?.source === "direct"
+                ? `غادي يرجع ${deletingExpense ? money(deletingExpense.amount) : ""} لرصيد ${deletingExpense?.channel === "cash" ? "الكاش" : "البنكة"}.`
+                : "غادي يتحيد المصروف والمساهمة المرتبطة به بلا تغيير رصيد الصندوق."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button variant="outline">إلغاء</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button
+                variant="destructive"
+                onClick={(event) => {
+                  if (
+                    !deletingExpense ||
+                    !dispatch({
+                      id: newId(),
+                      type: "correct_expense",
+                      adminId,
+                      targetId: deletingExpense.id,
+                      expectedRevision: state.revision,
+                      at: new Date().toISOString(),
+                    })
+                  )
+                    event.preventDefault();
+                  else setDeletingExpense(null);
+                }}
+              >
+                حذف المصروف
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
       <Dialog open={pendingReviewOpen} onOpenChange={setPendingReviewOpen}>
         <DialogContent dir="rtl" className="max-w-md">
-          <DialogHeader className="text-start"><DialogTitle>العمليات المعلقة</DialogTitle><DialogDescription>راجع العمليات اللي ما تزَامنتش. تقدر تعاود المحاولة أو تحيد عملية من هذا الجهاز.</DialogDescription></DialogHeader>
+          <DialogHeader className="text-start">
+            <DialogTitle>العمليات المعلقة</DialogTitle>
+            <DialogDescription>
+              راجع العمليات اللي ما تزَامنتش. تقدر تعاود المحاولة أو تحيد عملية
+              من هذا الجهاز.
+            </DialogDescription>
+          </DialogHeader>
           <div className="min-h-0 flex-1 space-y-2 overflow-y-auto overscroll-contain">
-            {repo.pendingItems.map((item) => <div key={item.id} className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 dark:border-white/10 p-3 text-xs"><div className="min-w-0"><p className="font-medium">{{ payment: "مساهمة", expense: "مصروف", waiver: "إعفاء", correct_payment: "تصحيح مساهمة", correct_expense: "تصحيح مصروف", correct_waiver: "تصحيح إعفاء", monthly_contribution: "تعديل مساهمة", member: "عضو", delete_member: "حذف عضو", minimum: "حد أدنى", minimum_rule: "قاعدة الحد الأدنى", receipt: "وصل", undo: "تراجع", admin: "مشرف", admin_status: "حالة مشرف", admin_edit: "تعديل مشرف", admin_archive: "أرشفة مشرف" }[item.type]}</p><p className="numeric truncate text-zinc-500 dark:text-zinc-400">{item.id}</p></div><Button size="sm" variant="ghost" className="text-rose-700 dark:text-rose-300" onClick={() => void repo.discardOne(item.id).catch((error) => toast.error(error.message))}>إلغاء</Button></div>)}
+            {repo.pendingItems.map((item) => (
+              <div
+                key={item.id}
+                className="flex items-center justify-between gap-2 rounded-md border border-zinc-200 dark:border-white/10 p-3 text-xs"
+              >
+                <div className="min-w-0">
+                  <p className="font-medium">
+                    {
+                      {
+                        payment: "مساهمة",
+                        expense: "مصروف",
+                        waiver: "إعفاء",
+                        correct_payment: "تصحيح مساهمة",
+                        correct_expense: "تصحيح مصروف",
+                        correct_waiver: "تصحيح إعفاء",
+                        monthly_contribution: "تعديل مساهمة",
+                        member: "عضو",
+                        delete_member: "حذف عضو",
+                        minimum: "حد أدنى",
+                        minimum_rule: "قاعدة الحد الأدنى",
+                        receipt: "وصل",
+                        undo: "تراجع",
+                        admin: "مشرف",
+                        admin_status: "حالة مشرف",
+                        admin_edit: "تعديل مشرف",
+                        admin_archive: "أرشفة مشرف",
+                      }[item.type]
+                    }
+                  </p>
+                  <p className="numeric truncate text-zinc-500 dark:text-zinc-400">
+                    {item.id}
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-rose-700 dark:text-rose-300"
+                  onClick={() =>
+                    void repo
+                      .discardOne(item.id)
+                      .catch((error) => toast.error(error.message))
+                  }
+                >
+                  إلغاء
+                </Button>
+              </div>
+            ))}
           </div>
-          <DialogFooter><Button variant="outline" onClick={() => void repo.retrySync()}>إعادة المحاولة</Button><Button onClick={() => setPendingReviewOpen(false)}>إغلاق</Button></DialogFooter>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => void repo.retrySync()}>
+              إعادة المحاولة
+            </Button>
+            <Button onClick={() => setPendingReviewOpen(false)}>إغلاق</Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
       <PassbookDrawer
@@ -803,7 +1377,7 @@ export function SandouqApp() {
         state={state}
         member={whatsappMember}
         month={month}
-        adminName={admin.name}
+        adminName={operatorName || admin.name}
         privacy={privacy}
         onClose={() => setWhatsappMember(null)}
       />
@@ -820,6 +1394,7 @@ export function SandouqApp() {
         onClose={() => setSwitchTarget("")}
         onVerify={(pin) => repo.switchAdmin(switchTarget, pin)}
       />
+      <GuideDrawer open={guideOpen} onClose={() => setGuideOpen(false)} />
     </div>
   );
 }

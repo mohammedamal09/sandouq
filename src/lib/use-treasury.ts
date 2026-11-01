@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { del, get, set } from "idb-keyval";
+import { del, get, keys, set } from "idb-keyval";
 import { applyCommand, type Command, type TreasuryState } from "./domain";
-import { loadLocal, saveLocal } from "./storage";
+import { createCleanLocalState, loadLocal, saveLocal } from "./storage";
 
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -46,7 +46,12 @@ export function useTreasury() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [pending, setPending] = useState(0);
-  const [pendingItems, setPendingItems] = useState<{ id: string; type: Command["type"] }[]>([]);
+  const [pendingItems, setPendingItems] = useState<
+    { id: string; type: Command["type"] }[]
+  >([]);
+  const [realtimeStatus, setRealtimeStatus] = useState<
+    "offline" | "connecting" | "connected" | "error"
+  >("offline");
   const stateRef = useRef<TreasuryState | null>(null);
   const syncing = useRef(false);
   const enqueueLock = useRef<Promise<void>>(Promise.resolve());
@@ -77,7 +82,9 @@ export function useTreasury() {
         }
       }
       setPending(queue.length);
-      setPendingItems(queue.map(({ command }) => ({ id: command.id, type: command.type })));
+      setPendingItems(
+        queue.map(({ command }) => ({ id: command.id, type: command.type })),
+      );
       update(visible);
       await set(snapshotKey, snapshot);
     },
@@ -100,10 +107,13 @@ export function useTreasury() {
         if (
           item.receipt &&
           supabase &&
-          (command.type === "expense" || command.type === "receipt" || command.type === "correct_expense")
+          (command.type === "expense" ||
+            command.type === "receipt" ||
+            command.type === "correct_expense")
         ) {
           const safeName = item.receipt.name.replace(/[^a-zA-Z0-9._-]/g, "-");
-          const expenseId = command.type === "receipt" ? command.expenseId : command.id;
+          const expenseId =
+            command.type === "receipt" ? command.expenseId : command.id;
           const path = `${groupRef.current}/${expenseId}/${safeName}`;
           const { error: uploadError } = await supabase.storage
             .from("sandouq-receipts")
@@ -112,15 +122,24 @@ export function useTreasury() {
               contentType: item.receipt.type,
             });
           if (uploadError) throw uploadError;
-          command = command.type === "correct_expense"
-            ? { ...command, replacement: { ...command.replacement!, receiptId: `receipt:${path}` } }
-            : { ...command, receiptId: `receipt:${path}` };
+          command =
+            command.type === "correct_expense"
+              ? {
+                  ...command,
+                  replacement: {
+                    ...command.replacement!,
+                    receiptId: `receipt:${path}`,
+                  },
+                }
+              : { ...command, receiptId: `receipt:${path}` };
         }
         const response = await api("POST", { action: "command", command });
         queue = queue.slice(1);
         await set(queueKey, queue);
         setPending(queue.length);
-        setPendingItems(queue.map(({ command }) => ({ id: command.id, type: command.type })));
+        setPendingItems(
+          queue.map(({ command }) => ({ id: command.id, type: command.type })),
+        );
         const snapshot: Snapshot = {
           state: response.state,
           adminId: response.adminId,
@@ -133,6 +152,20 @@ export function useTreasury() {
       setError((cause as Error).message);
     } finally {
       syncing.current = false;
+    }
+  }, [applySnapshot]);
+  const refreshFromCloud = useCallback(async () => {
+    if (!cloudEnabled || !navigator.onLine || !groupRef.current) return;
+    try {
+      const remote = await api("GET");
+      if (remote.joined)
+        await applySnapshot({
+          state: remote.state as TreasuryState,
+          adminId: remote.adminId as string,
+          groupId: remote.groupId as string,
+        });
+    } catch (cause) {
+      setError((cause as Error).message);
     }
   }, [applySnapshot]);
   useEffect(() => {
@@ -159,8 +192,14 @@ export function useTreasury() {
         if (remote.joined && alive) {
           await applySnapshot(remote);
           void sync();
-        } else if (alive && cached && ((await get<Queued[]>(queueKey))?.length ?? 0) > 0) {
-          setError("صلاحية المشرف تبدلات. راجع العمليات المعلقة أو احذفها، ثم بدل المشرف.");
+        } else if (
+          alive &&
+          cached &&
+          ((await get<Queued[]>(queueKey))?.length ?? 0) > 0
+        ) {
+          setError(
+            "صلاحية المشرف تبدلات. راجع العمليات المعلقة أو احذفها، ثم بدل المشرف.",
+          );
         } else if (alive) {
           stateRef.current = null;
           setState(null);
@@ -190,6 +229,7 @@ export function useTreasury() {
   }, [applySnapshot, sync, update]);
   useEffect(() => {
     if (!supabase || !groupId) return;
+    let refreshTimer: number | undefined;
     const channel = supabase
       .channel(`sandouq-${groupId}`)
       .on(
@@ -200,16 +240,29 @@ export function useTreasury() {
           table: "group_state",
           filter: `group_id=eq.${groupId}`,
         },
-        (payload) => {
-          const next = payload.new?.data as TreasuryState | undefined;
-          if (next) void applySnapshot({ state: next, adminId, groupId });
+        () => {
+          // Financial records are committed together in group_state. Refetching the
+          // snapshot keeps every selector and tab on the same revision, while
+          // applySnapshot safely reapplies this device's still-pending commands.
+          if (refreshTimer) window.clearTimeout(refreshTimer);
+          refreshTimer = window.setTimeout(() => void refreshFromCloud(), 120);
         },
       )
-      .subscribe();
+      .subscribe((status) => {
+        setRealtimeStatus(
+          status === "SUBSCRIBED"
+            ? "connected"
+            : status === "CHANNEL_ERROR" || status === "TIMED_OUT"
+              ? "error"
+              : "connecting",
+        );
+      });
     return () => {
+      if (refreshTimer) window.clearTimeout(refreshTimer);
+      setRealtimeStatus("offline");
       void supabase.removeChannel(channel);
     };
-  }, [groupId, adminId, applySnapshot]);
+  }, [groupId, refreshFromCloud]);
   const dispatch = useCallback(
     (command: Command, receipt?: File): boolean => {
       const previous = stateRef.current;
@@ -223,15 +276,27 @@ export function useTreasury() {
           return true;
         }
         if (
-          (["admin", "admin_status", "admin_edit", "admin_archive"].includes(command.type)) &&
+          ["admin", "admin_status", "admin_edit", "admin_archive"].includes(
+            command.type,
+          ) &&
           !navigator.onLine
         )
           throw new Error("تغيير المشرفين خاصو اتصال بالإنترنت");
-        if (["admin", "admin_status", "admin_edit", "admin_archive"].includes(command.type)) {
+        if (
+          ["admin", "admin_status", "admin_edit", "admin_archive"].includes(
+            command.type,
+          )
+        ) {
           if (pending || syncing.current)
             throw new Error("زامن العمليات المعلقة قبل تغيير المشرفين");
           void api("POST", { action: "command", command })
-            .then((response) => applySnapshot({ state: response.state as TreasuryState, adminId: response.adminId, groupId: groupRef.current }))
+            .then((response) =>
+              applySnapshot({
+                state: response.state as TreasuryState,
+                adminId: response.adminId,
+                groupId: groupRef.current,
+              }),
+            )
             .catch((cause) => setError((cause as Error).message));
           return true;
         }
@@ -250,7 +315,12 @@ export function useTreasury() {
                 await set(queueKey, queue);
                 await del(`sandouq:receipt:${command.entityId}`);
                 setPending(queue.length);
-                setPendingItems(queue.map(({ command }) => ({ id: command.id, type: command.type })));
+                setPendingItems(
+                  queue.map(({ command }) => ({
+                    id: command.id,
+                    type: command.type,
+                  })),
+                );
                 const cached = await get<Snapshot>(snapshotKey);
                 if (cached) await applySnapshot(cached);
                 return;
@@ -259,7 +329,12 @@ export function useTreasury() {
             queue.push({ command, receipt });
             await set(queueKey, queue);
             setPending(queue.length);
-            setPendingItems(queue.map(({ command }) => ({ id: command.id, type: command.type })));
+            setPendingItems(
+              queue.map(({ command }) => ({
+                id: command.id,
+                type: command.type,
+              })),
+            );
             await sync();
           })
           .catch(async (cause) => {
@@ -279,7 +354,12 @@ export function useTreasury() {
     async (targetId: string, pin: string) => {
       if (!cloudEnabled) {
         const target = stateRef.current?.admins.find((a) => a.id === targetId);
-        if (!target || !target.active || target.archivedAt || target.pin !== pin)
+        if (
+          !target ||
+          !target.active ||
+          target.archivedAt ||
+          target.pin !== pin
+        )
           throw new Error("رمز المشرف غير صحيح");
         setAdminId(targetId);
         localStorage.setItem("sandouq:admin", targetId);
@@ -368,20 +448,28 @@ export function useTreasury() {
     }
     setError("");
   }, [applySnapshot]);
-  const discardOne = useCallback(async (id: string) => {
-    await enqueueLock.current;
-    if (syncing.current) throw new Error("تسنى حتى تكمل محاولة المزامنة");
-    const queue = (await get<Queued[]>(queueKey)) ?? [];
-    const remaining = queue.filter((item) => item.command.id !== id);
-    if (remaining.length === queue.length) return;
-    await set(queueKey, remaining);
-    await del(`sandouq:receipt:${id}`);
-    setPending(remaining.length);
-    setPendingItems(remaining.map(({ command }) => ({ id: command.id, type: command.type })));
-    const cached = await get<Snapshot>(snapshotKey);
-    if (cached) await applySnapshot(cached);
-    if (!remaining.length) setError("");
-  }, [applySnapshot]);
+  const discardOne = useCallback(
+    async (id: string) => {
+      await enqueueLock.current;
+      if (syncing.current) throw new Error("تسنى حتى تكمل محاولة المزامنة");
+      const queue = (await get<Queued[]>(queueKey)) ?? [];
+      const remaining = queue.filter((item) => item.command.id !== id);
+      if (remaining.length === queue.length) return;
+      await set(queueKey, remaining);
+      await del(`sandouq:receipt:${id}`);
+      setPending(remaining.length);
+      setPendingItems(
+        remaining.map(({ command }) => ({
+          id: command.id,
+          type: command.type,
+        })),
+      );
+      const cached = await get<Snapshot>(snapshotKey);
+      if (cached) await applySnapshot(cached);
+      if (!remaining.length) setError("");
+    },
+    [applySnapshot],
+  );
   const importLocal = useCallback(
     (next: TreasuryState) => {
       if (cloudEnabled) throw new Error("استيراد السحابة كينشئ مجموعة جديدة");
@@ -390,6 +478,19 @@ export function useTreasury() {
     },
     [update],
   );
+  const resetLocal = useCallback(async () => {
+    if (cloudEnabled) throw new Error("التصفير المحلي غير متاح فالوضع السحابي");
+    const previous = stateRef.current ?? undefined;
+    const clean = createCleanLocalState(previous);
+    for (const key of await keys()) {
+      if (typeof key === "string" && key.startsWith("sandouq:receipt:"))
+        await del(key);
+    }
+    update(clean);
+    saveLocal(clean);
+    setAdminId(clean.admins[0].id);
+    localStorage.setItem("sandouq:admin", clean.admins[0].id);
+  }, [update]);
   return {
     state,
     adminId,
@@ -398,6 +499,7 @@ export function useTreasury() {
     error,
     pending,
     pendingItems,
+    realtimeStatus,
     cloudEnabled,
     dispatch,
     switchAdmin,
@@ -405,7 +507,9 @@ export function useTreasury() {
     lookupGroup,
     joinGroup,
     importLocal,
+    resetLocal,
     retrySync: sync,
+    refreshFromCloud,
     discardPending,
     discardOne,
     clearError: () => setError(""),

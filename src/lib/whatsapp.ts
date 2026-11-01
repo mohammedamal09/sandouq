@@ -45,7 +45,10 @@ export function privateMessage(
     arrears: `السلام عليكم ${member.name}، تذكير بكل احترام: باقي عندك ${arrears.count} شهر/شهور ما تكملوش، بمجموع ${money(arrears.amount)}. إلى كان شي إشكال خبرنا باش نلقاو حل.`,
     receipt: `السلام عليكم ${member.name}، تأكيد التوصل بمساهمتك لشهر ${month}: ${money(paid)}. الحالة: ${paid >= due ? "خالص" : "جزئي"}. شكراً على المساهمة ديالك.`,
   };
-  return `${messages[kind]}\n\n— مع تحيات ${adminName}`;
+  const access = member.accessPin
+    ? `\n\nللاطلاع على وضعيتك الشخصية، ادخل للتطبيق واستعمل رقم هاتفك مع هذا الرمز السري: ${member.accessPin}`
+    : "";
+  return `${messages[kind]}${access}\n\n— مع تحيات ${adminName}`;
 }
 export function whatsappUrl(phone: string, message: string): string | null {
   const normalized = normalizeMoroccanPhone(phone);

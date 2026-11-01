@@ -24,6 +24,8 @@ export interface Member {
   active: boolean;
   revision: number;
   archivedAt?: string;
+  /** Private code used by the member-only passbook lookup. */
+  accessPin?: string;
 }
 export interface Minimum {
   month: string;

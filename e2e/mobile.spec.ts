@@ -1,30 +1,93 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
+import { createSeed } from "../src/lib/seed";
 
-for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }]) {
-  test(`passbook and expense drawers keep actions visible at ${viewport.width}x${viewport.height}`, async ({ page }) => {
+async function openAdminDemo(page: Page) {
+  const state = createSeed();
+  state.group.id = "e2e-demo";
+  await page.addInitScript((data) => {
+    if (!localStorage.getItem("sandouq:local:v1")) {
+      localStorage.setItem("sandouq:local:v1", JSON.stringify(data));
+    }
+    localStorage.setItem("sandouq:admin-mode", "1");
+    localStorage.setItem("sandouq:operator-name", "اختبار");
+  }, state);
+  await page.goto("/");
+}
+
+test("375px mobile workspace has no horizontal overflow and touch-safe controls", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await openAdminDemo(page);
+  const metrics = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    content: document.documentElement.scrollWidth,
+    controls: [
+      ...document.querySelectorAll<HTMLElement>(
+        "button, input, select, textarea",
+      ),
+    ]
+      .filter((element) => element.offsetParent !== null)
+      .map((element) => ({
+        tag: element.tagName,
+        width: element.getBoundingClientRect().width,
+        height: element.getBoundingClientRect().height,
+        right: element.getBoundingClientRect().right,
+        left: element.getBoundingClientRect().left,
+      })),
+  }));
+  expect(metrics.content).toBeLessThanOrEqual(metrics.viewport);
+  for (const control of metrics.controls) {
+    expect(
+      control.height,
+      `${control.tag} is too short`,
+    ).toBeGreaterThanOrEqual(44);
+    expect(control.left).toBeGreaterThanOrEqual(0);
+    expect(control.right).toBeLessThanOrEqual(metrics.viewport);
+  }
+});
+
+for (const viewport of [
+  { width: 320, height: 568 },
+  { width: 390, height: 844 },
+]) {
+  test(`passbook and expense drawers keep actions visible at ${viewport.width}x${viewport.height}`, async ({
+    page,
+  }) => {
     await page.setViewportSize(viewport);
-    await page.goto("/");
+    await openAdminDemo(page);
     await expect(page.getByText("مساهمات الأعضاء")).toBeVisible();
     await page.locator("button.min-w-0.flex-1.text-start").first().click();
     const passbook = page.locator('[data-slot="drawer-content"]:visible');
     await expect(passbook).toBeVisible();
     const scrollBody = passbook.locator(".overflow-y-auto").first();
     await expect(scrollBody).toBeVisible();
-    const dimensions = await scrollBody.evaluate((element) => ({ client: element.clientHeight, full: element.scrollHeight }));
+    const dimensions = await scrollBody.evaluate((element) => ({
+      client: element.clientHeight,
+      full: element.scrollHeight,
+    }));
     expect(dimensions.full).toBeGreaterThan(dimensions.client);
-    await scrollBody.evaluate((element) => { element.scrollTop = element.scrollHeight; });
-    await expect(passbook.getByRole("button", { name: "إغلاق" })).toBeInViewport();
+    await scrollBody.evaluate((element) => {
+      element.scrollTop = element.scrollHeight;
+    });
+    await expect(
+      passbook.getByRole("button", { name: "إغلاق" }),
+    ).toBeInViewport();
     await passbook.getByRole("button", { name: "إغلاق" }).click();
     await page.getByRole("button", { name: "قيد مصروف" }).click();
     const expense = page.locator('[data-slot="drawer-content"]:visible');
-    await expect(expense.getByRole("button", { name: "تسجيل المصروف" })).toBeInViewport();
+    await expect(
+      expense.getByRole("button", { name: "تسجيل المصروف" }),
+    ).toBeInViewport();
     await expect(expense.locator(".overflow-y-auto").first()).toBeVisible();
   });
 }
 
-test("mobile navigation exposes analytics and privacy blur", async ({ page }) => {
+test("mobile navigation exposes analytics and privacy blur", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await openAdminDemo(page);
   await expect(page.locator("nav button")).toHaveCount(5);
   await page.getByRole("button", { name: "إخفاء الأسماء" }).click();
   await expect(page.locator(".private-blur").first()).toBeVisible();
@@ -34,11 +97,16 @@ test("mobile navigation exposes analytics and privacy blur", async ({ page }) =>
   await expect(page.getByText("توزيع المصاريف", { exact: true })).toBeVisible();
 });
 
-test("expense edit and delete keep an audited ledger entry", async ({ page }) => {
+test("expense edit and delete keep an audited ledger entry", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await openAdminDemo(page);
   await page.locator("nav button").nth(1).click();
-  await page.getByRole("button", { name: /خيارات المصروف/ }).first().click();
+  await page
+    .getByRole("button", { name: /خيارات المصروف/ })
+    .first()
+    .click();
   await page.getByRole("menuitem", { name: "تعديل" }).click();
   const drawer = page.locator('[data-slot="drawer-content"]:visible');
   await expect(drawer.getByText("تعديل المصروف")).toBeVisible();
@@ -48,16 +116,23 @@ test("expense edit and delete keep an audited ledger entry", async ({ page }) =>
   await expect(page.getByText("مصروف مصحح")).toBeVisible();
   await page.getByRole("button", { name: "خيارات المصروف مصروف مصحح" }).click();
   await page.getByRole("menuitem", { name: "حذف" }).click();
-  await expect(page.getByRole("alertdialog")).toContainText("هل أنت متأكد من حذف هذا المصروف؟");
-  await page.getByRole("alertdialog").getByRole("button", { name: "حذف المصروف" }).click();
+  await expect(page.getByRole("alertdialog")).toContainText(
+    "هل أنت متأكد من حذف هذا المصروف؟",
+  );
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "حذف المصروف" })
+    .click();
   await expect(page.getByText("مصروف مصحح")).toHaveCount(0);
   await page.locator("nav button").filter({ hasText: "السجل" }).click();
   await expect(page.getByText("مصروف مصحح")).toBeVisible();
 });
 
-test("settings admin dialog validates PIN and keeps its actions reachable", async ({ page }) => {
+test("settings admin dialog validates PIN and keeps its actions reachable", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 320, height: 568 });
-  await page.goto("/");
+  await openAdminDemo(page);
   await page.locator("nav button").nth(4).click();
   await page.getByRole("button", { name: "إضافة مشرف جديد" }).click();
   const dialog = page.getByRole("dialog");
@@ -71,18 +146,25 @@ test("settings admin dialog validates PIN and keeps its actions reachable", asyn
   await expect(page.getByText("مشرف تجريبي")).toBeVisible();
 });
 
-test("analytics explains empty commitment and expense data", async ({ page }) => {
+test("analytics explains empty commitment and expense data", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto("/");
+  await openAdminDemo(page);
   await expect(page.getByText("مساهمات الأعضاء")).toBeVisible();
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("sandouq:local:v1")!);
-    state.members = []; state.payments = []; state.waivers = []; state.expenses = [];
+    state.members = [];
+    state.payments = [];
+    state.waivers = [];
+    state.expenses = [];
     localStorage.setItem("sandouq:local:v1", JSON.stringify(state));
   });
   await page.reload();
   await page.locator("nav button").nth(3).click();
-  await expect(page.getByText("ما كاينينش أعضاء مؤهلين هاد الشهر")).toBeVisible();
+  await expect(
+    page.getByText("ما كاينينش أعضاء مؤهلين هاد الشهر"),
+  ).toBeVisible();
   await expect(page.getByText("ما كاين حتى مصروف مسجل")).toBeVisible();
   await expect(page.getByRole("table")).toContainText("0 DH");
 });
